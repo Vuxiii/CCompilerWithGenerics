@@ -145,6 +145,42 @@ extension Lowering.SSA {
     }
 }
 
+enum Either<Left, Right> {
+    case left(Left)
+    case right(Right)
+}
+
+extension Either {
+    var isLeft: Bool {
+        switch self {
+            case .left: return true
+            case .right: return false
+        }
+    }
+    
+    var isRight: Bool {
+        return !isLeft
+    }
+    
+    func mapLeft<T>(
+        _ transform: (Left) throws -> T
+    ) rethrows -> Either<T, Right> {
+        switch self {
+            case .left(let left): return .left(try transform(left))
+            case .right(let right): return .right(right)
+        }
+    }
+    
+    func mapRight<T>(
+        _ transform: (Right) throws -> T
+    ) rethrows -> Either<Left, T> {
+        switch self {
+            case .left(let left): return .left(left)
+            case .right(let right): return .right(try transform(right))
+        }
+    }
+}
+
 class Lowering {
     var nodes: [Node.Stripped].SubSequence
     var blocks: [SSABlock] = []
@@ -185,8 +221,15 @@ class Lowering {
     struct SSA {
         var name: SSAVar
         let left: SSAValue
-        let right: SSAValue? // TODO(William): We could combine this and op in a optional tuple
+        let right: SSAValue?// TODO(William): We could combine this and op in a optional tuple
         let op: Operator?
+        
+        public init(name: SSAVar, left: SSAValue, right: SSAValue? = nil, op: Operator? = nil) {
+            self.name = name
+            self.left = left
+            self.right = right
+            self.op = op
+        }
     }
 
     func nextVersion(for descriptor: Node.Descriptor) -> Int { // TODO(William): default name should be mangled or something. Maybe switch to using enums instead.
@@ -197,6 +240,11 @@ class Lowering {
         return variables[variable, default: 0]
     }
 
+    func nextTemp() -> Int {
+        latestTempVersion += 1
+        return latestTempVersion
+    }
+    
     func latestVersionNumber(for variable: Node.Descriptor) -> VersionNumber {
         let name = stringResolver.resolve(variable)
         return variables[name, default: 0]
@@ -227,8 +275,9 @@ class Lowering {
             case .addExpression, .subExpression, .divExpression, .timesExpression:
                 nodes.removeFirst()
                 var output = [SSA]()
-                
+                                
                 var lhs: SSAValue
+                var leftExpressions = [SSA]()
                 if case let .number(descriptor) = nodes.first {
                     lhs = .number(descriptor)
                     nodes.removeFirst()
@@ -236,11 +285,12 @@ class Lowering {
                     lhs = .ssaVar(.variable(descriptor, latestVersionNumber(for: descriptor)))
                     nodes.removeFirst()
                 } else {
-                    output.append(contentsOf: lowerExpression(nodes: &nodes))
+                    leftExpressions = lowerExpression(nodes: &nodes)
                     lhs = .ssaVar(.temp(latestTempVersion))
                 }
                 
                 let rhs: SSAValue
+                var rightExpressions = [SSA]()
                 if case let .number(descriptor) = nodes.first {
                     rhs = .number(descriptor)
                     nodes.removeFirst()
@@ -248,18 +298,29 @@ class Lowering {
                     rhs = .ssaVar(.variable(descriptor, latestVersionNumber(for: descriptor)))
                     nodes.removeFirst()
                 } else {
-                    output.append(contentsOf: lowerExpression(nodes: &nodes))
+                    if leftExpressions.isEmpty {
+                        let singleSSA = SSA(
+                            name: .temp(nextTemp()),
+                            left: lhs
+                        )
+                        lhs = .ssaVar(.temp(latestTempVersion))
+                        output.append(singleSSA)
+                    }
+                    rightExpressions = lowerExpression(nodes: &nodes)
                     rhs = .ssaVar(.temp(latestTempVersion))
                 }
+                
+                output.append(contentsOf: leftExpressions)
+                output.append(contentsOf: rightExpressions)
                 
                 let op: Operator = if case .addExpression = node { Operator.plus }
                               else if case .subExpression = node { .minus }
                               else if case .divExpression = node { .div }
                               else { .times }
 
-                latestTempVersion += 1
+                
                 let ssa = SSA(
-                    name: .temp(latestTempVersion),
+                    name: .temp(nextTemp()),
                     left: lhs,
                     right: rhs,
                     op: op
