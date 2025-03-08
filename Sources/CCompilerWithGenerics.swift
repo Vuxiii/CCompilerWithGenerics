@@ -34,12 +34,12 @@ int justADecl;
 int a = 69;
 a = 2 + 3 * (4 - 1); hej med dig 42.69
 """
-        let simpleSSATest = """
-a = 2 + 69 * 42;
-"""
 //        let simpleSSATest = """
-//a = 1 + 2 + 3;
+//a = 2 + 69 * 42;
 //"""
+        let simpleSSATest = """
+a = 2 + 3 * (4 - 1);
+"""
         
         let lexer = Lexer(source: simpleSSATest[...])
         lexer.lex()
@@ -224,7 +224,12 @@ class Lowering {
         let right: SSAValue?// TODO(William): We could combine this and op in a optional tuple
         let op: Operator?
         
-        public init(name: SSAVar, left: SSAValue, right: SSAValue? = nil, op: Operator? = nil) {
+        public init(
+            name: SSAVar,
+            left: SSAValue,
+            right: SSAValue? = nil,
+            op: Operator? = nil
+        ) {
             self.name = name
             self.left = left
             self.right = right
@@ -299,6 +304,7 @@ class Lowering {
                     nodes.removeFirst()
                 } else {
                     if leftExpressions.isEmpty {
+                        // The lhs is a single value and rhs is compound expression. For this reason, we need to compute lhs first and store it in a temp variable. Then we can compute rhs expression. This also means that we need to update lhs to point to our tmp variable.
                         let singleSSA = SSA(
                             name: .temp(nextTemp()),
                             left: lhs
@@ -332,8 +338,6 @@ class Lowering {
             default:
                 preconditionFailure("Unrecognized node \(node) during lowering of expression")
         }
-        
-        return []
     }
 
     func convertToSSA() -> [SSABlock] {
