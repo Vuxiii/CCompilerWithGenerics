@@ -1,0 +1,33 @@
+{
+  "configurations" : [
+    {
+      "id" : "8F7E7784-2144-4C7A-9F5E-37377BB7BE34",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "commandLineArgumentEntries" : [
+      {
+        "argument" : "Sources\/Tests\/simpleLexInput.txt"
+      }
+    ],
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:",
+      "identifier" : "CCompilerWithGenerics",
+      "name" : "CCompilerWithGenerics"
+    }
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "CCompilerWithGenericsTests",
+        "name" : "CCompilerWithGenericsTests"
+      }
+    }
+  ],
+  "version" : 1
+}

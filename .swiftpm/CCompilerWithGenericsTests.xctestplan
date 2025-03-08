@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "80E039C8-46CC-45D6-98A8-ED5ECD59F3DC",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "CCompilerWithGenericsTests",
+        "name" : "CCompilerWithGenericsTests"
+      }
+    }
+  ],
+  "version" : 1
+}
