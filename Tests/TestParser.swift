@@ -49,4 +49,40 @@ final class TestParser: XCTestCase {
             .number(9)
         ])
     }
+
+    func testDeclAssignment() {
+        let tokens: [Token] = [
+            .identifier,
+            .identifier,
+            .equal,
+            .number,
+            .plus,
+            .number,
+            .times,
+            .lparen,
+            .number,
+            .minus,
+            .number,
+            .rparen,
+            .semicolon
+        ]
+        
+        let parser = Parser(tokens: tokens[...])
+        parser.parseVariableAssignmentDeclaration()
+        
+        XCTAssertEqual(parser.nodes, [
+            .variableDeclaration,
+            .identifier(1),
+            .identifier(0),
+            .assignment,
+            .identifier(1),
+            .addExpression,
+            .number(3),
+            .timesExpression,
+            .number(5),
+            .subExpression,
+            .number(8),
+            .number(10)
+        ])
+    }
 }
