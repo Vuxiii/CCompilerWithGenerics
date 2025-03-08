@@ -85,6 +85,24 @@ final class TestParser: XCTestCase {
             .number(10)
         ])
     }
+    
+    func testVarDecl() {
+        let tokens: [Token] = [
+            .identifier,
+            .identifier,
+            .semicolon
+        ]
+        
+        let parser = Parser(tokens: tokens[...])
+        parser.parseVariableDeclaration()
+        
+        XCTAssertEqual(parser.nodes, [
+            .variableDeclaration,
+            .identifier(1),
+            .identifier(0)
+        ])
+    }
+    
     func testStructDeclNoFields() {
         let tokens: [Token] = [
             .struct,
