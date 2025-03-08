@@ -136,15 +136,15 @@ class Parser {
         parseAssignment()
     }
     
-    private func parseTopLevel() {
+    func parseTopLevel() {
         
     }
     
-    private func parseStatement() {
+    func parseStatement() {
         
     }
     
-    private func parseScope() {
+    func parseScope() {
         precondition(token(at: 0) == .lcurl)
         
         tokens.removeFirst()
@@ -156,7 +156,7 @@ class Parser {
         nodes.append(.scopeEnd)
     }
     
-    private func parseStructDeclaration() {
+    func parseStructDeclaration() {
         precondition(tokens.count >= 3)
         precondition(token(at: 0) == .struct)
         precondition(token(at: 1) == .identifier)
@@ -189,7 +189,7 @@ class Parser {
         
     }
     
-    private func parseVariableDeclaration() {
+    func parseVariableDeclaration() {
         precondition(tokens.count >= 3)
         precondition(token(at: 0) == .identifier)
         precondition(token(at: 1) == .identifier)
@@ -206,7 +206,7 @@ class Parser {
         tokens.removeFirst(3)
     }
     
-    private func parseVariableAssignmentDeclaration() {
+    func parseVariableAssignmentDeclaration() {
         precondition(tokens.count >= 3)
         precondition(token(at: 0) == .identifier) // Type
         precondition(token(at: 1) == .identifier) // Name
@@ -225,7 +225,7 @@ class Parser {
         parseAssignment()
     }
     
-    private func parseAssignment() {
+    func parseAssignment() {
         precondition(tokens.first == .identifier)
         precondition(tokens.count >= 3)
         precondition(token(at: 1) == .equal)
@@ -238,11 +238,11 @@ class Parser {
         tokens.removeFirst()
     }
     
-    private func parseExpression() {
+    func parseExpression() {
         parseSum()
     }
     
-    private func parseSum() {
+    func parseSum() {
         let beginning = nodes.count
         parseProduct()
         while let first = tokens.first, [.plus, .minus].contains(first) {
@@ -257,7 +257,7 @@ class Parser {
         }
     }
     
-    private func parseProduct() {
+    func parseProduct() {
         let beginning = nodes.count
         parseFactor()
         while let first = tokens.first, [.times, .div].contains(first) {
@@ -272,7 +272,7 @@ class Parser {
         }
     }
     
-    private func parseFactor() {
+    func parseFactor() {
         guard let firstToken = tokens.first else {
             preconditionFailure("When parsing a factor, there should always be something present. As this is in the middle of an expression.")
         }

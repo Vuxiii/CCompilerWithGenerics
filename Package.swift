@@ -19,5 +19,8 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ]
         ),
+        .testTarget(name: "CCompilerWithGenericsTests", dependencies: [
+            .targetItem(name: "CCompilerWithGenerics", condition: .when(platforms: [.macOS]))
+        ])
     ]
 )

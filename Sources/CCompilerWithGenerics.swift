@@ -340,7 +340,7 @@ class Lowering {
         }
     }
 
-    func convertToSSA() -> [SSABlock] {
+    func convertToSSA() -> [SSA] {
         while let node = nodes.first {
             switch node {
                 case .assignment:
@@ -357,7 +357,8 @@ class Lowering {
                     let strings = rhs.map { $0.stringRepresentation(resolver: stringResolver) }
                         .joined(separator: "\n")
                     
-                    print(strings)
+//                    print(strings)
+                    return rhs
                 case .addExpression, .subExpression, .divExpression, .timesExpression:
                     let ssas = lowerExpression(nodes: &nodes)
                     
