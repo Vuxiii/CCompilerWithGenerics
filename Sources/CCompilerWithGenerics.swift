@@ -53,7 +53,7 @@ a = 2 + 3 * (4 - 1);
 }
 """
         
-        let lexer = Lexer(source: contents[...])
+        let lexer = Lexer(source: simpleSSATest[...])
         lexer.lex()
         for index in lexer.tokens.indices {
             print("\(lexer.tokens[index]): '\(lexer.getSubstring(representedBy: index))'")
@@ -98,6 +98,35 @@ a = 2 + 3 * (4 - 1);
         
         let ssas = lower.lowerAssignmentOrExpressionToSSA()
         
+        print("Computing liveness")
+        let livenessAnalysis = Liveness(
+            instructions: ssas[...],
+            stringResolver: .init(resolve: lexer.getSubstring(representedBy:))
+        )
+        
+        livenessAnalysis.compute()
+        
+        for (variable, range) in livenessAnalysis.livenessRanges {
+            print("\(variable) -> \(range)")
+        }
+        print(ssas.map { $0.stringRepresentation(resolver: .init(resolve: lexer.getSubstring(representedBy:)))}.joined(separator: "\n"))
+        
+        print("Computing Interference Graph")
+        
+        let interferenceGraph = InterferenceGraph(livenessRanges: livenessAnalysis.livenessRanges)
+        
+        interferenceGraph.compute()
+        
+        for (node, connectingNodes) in interferenceGraph.nodes {
+            print("\(node):")
+            for connected in connectingNodes.connects {
+                print("\t\(connected.ssaVariable)")
+            }
+        }
+        
+        return
+        
+        
         let instructions = lowerSSA(
             ssas: ssas[...],
             scopes: [:]
@@ -106,21 +135,34 @@ a = 2 + 3 * (4 - 1);
         let machine = VirtualMachine(instructions: instructions)
 //        machine.run()
     }
-    
-    
 }
 
 func lowerSSA(
-    ssas: [Lowering.SSA].SubSequence,
+    ssas: [Lowering.SSAInstruction].SubSequence,
     scopes: [Range<Node.Descriptor>: Layout.ScopeLayout]
 ) -> [VirtualMachine.Instruction] {
-    
     for ssa in ssas {
         switch ssa.name {
-            case let .temp(version):
+            case .temp(let versionNumber):
                 break
-            case let .variable(descriptor, version):
+            case let .variable(descriptor, versionNumber):
                 break
+        }
+        
+        switch ssa.left {
+            case .ssaVar(let sSAVar):
+                break
+            case .number(let descriptor):
+                break
+        }
+        
+        if let (op, right) = ssa.rhs {
+            switch right {
+                case .ssaVar(let sSAVar):
+                    break
+                case .number(let descriptor):
+                    break
+            }
         }
     }
     
@@ -134,7 +176,7 @@ func stripDeclarations(
     return nodes.compactMap(Node.Stripped.construct(from:))
 }
 
-extension Lowering.SSA {
+extension Lowering.SSAInstruction {
     func stringRepresentation(resolver stringResolver: StringResolver) -> String {
         let name = switch self.name {
             case .temp(let version):
@@ -175,41 +217,6 @@ extension Lowering.SSA {
     }
 }
 
-enum Either<Left, Right> {
-    case left(Left)
-    case right(Right)
-}
-
-extension Either {
-    var isLeft: Bool {
-        switch self {
-            case .left: return true
-            case .right: return false
-        }
-    }
-    
-    var isRight: Bool {
-        return !isLeft
-    }
-    
-    func mapLeft<T>(
-        _ transform: (Left) throws -> T
-    ) rethrows -> Either<T, Right> {
-        switch self {
-            case .left(let left): return .left(try transform(left))
-            case .right(let right): return .right(right)
-        }
-    }
-    
-    func mapRight<T>(
-        _ transform: (Right) throws -> T
-    ) rethrows -> Either<Left, T> {
-        switch self {
-            case .left(let left): return .left(left)
-            case .right(let right): return .right(try transform(right))
-        }
-    }
-}
 
 class Lowering {
     var nodes: [Node].SubSequence
@@ -229,12 +236,13 @@ class Lowering {
     }
     
     struct SSABlock {
-        var predecessors: [SSABlock]
+        let predecessors: [SSABlock]
+        let instructions: [SSAInstruction]
     }
 
     typealias VersionNumber = Int
     
-    enum SSAVar {
+    enum SSAVar { // TODO(William): Probably move this into an IR scope instead.
         case temp(VersionNumber)
         case variable(Node.Descriptor, VersionNumber)
     }
@@ -244,14 +252,14 @@ class Lowering {
         case number(Node.Descriptor)
     }
     
-    enum Operator {
+    enum SSAOperator {
         case plus, minus, times, div
     }
     
-    struct SSA {
+    struct SSAInstruction {
         var name: SSAVar
         let left: SSAValue
-        let rhs: (op: Operator, right: SSAValue)?
+        let rhs: (op: SSAOperator, right: SSAValue)?
         
         public init(
             name: SSAVar,
@@ -266,7 +274,7 @@ class Lowering {
             name: SSAVar,
             left: SSAValue,
             right: SSAValue,
-            op: Operator
+            op: SSAOperator
         ) {
             self.name = name
             self.left = left
@@ -276,9 +284,7 @@ class Lowering {
 
     func nextVersion(for descriptor: Node.Descriptor) -> Int {
         let variable = stringResolver.resolve(descriptor)
-//        defer {
-            variables[variable, default: 0] += 1
-//        }
+        variables[variable, default: 0] += 1
         return variables[variable, default: 0]
     }
 
@@ -292,7 +298,7 @@ class Lowering {
         return variables[name, default: 0]
     }
     
-    func extractExpressions(nodes: inout [Node].SubSequence) -> (SSAValue, [Lowering.SSA]) {
+    func extractExpressions(nodes: inout [Node].SubSequence) -> (SSAValue, [Lowering.SSAInstruction]) {
         switch lowerExpression(nodes: &nodes) {
             case .left(let subExpressions):
                 return (.ssaVar(.temp(latestTempVersion)), subExpressions)
@@ -301,7 +307,7 @@ class Lowering {
         }
     }
     
-    func lowerExpression(nodes: inout [Node].SubSequence) -> Either<[SSA], SSAValue> {
+    func lowerExpression(nodes: inout [Node].SubSequence) -> Either<[SSAInstruction], SSAValue> {
         guard let node = nodes.first else {
             return .left([])
         }
@@ -315,13 +321,13 @@ class Lowering {
                 return .right(.number(descriptor))
             case .addExpression, .subExpression, .divExpression, .timesExpression:
                 nodes.removeFirst()
-                var output = [SSA]()
+                var output = [SSAInstruction]()
                 
                 var (lhs, lhsSubExpressions) = extractExpressions(nodes: &nodes)
                 
                 if [.addExpression, .subExpression,
                      .divExpression, .timesExpression].contains(nodes.first) && lhsSubExpressions.isEmpty {
-                    let singleSSA = SSA(
+                    let singleSSA = SSAInstruction(
                         name: .temp(nextTempVersion()),
                         left: lhs
                     )
@@ -334,13 +340,13 @@ class Lowering {
                 output.append(contentsOf: lhsSubExpressions)
                 output.append(contentsOf: rhsSubExpressions)
                 
-                let op: Operator = if case .addExpression = node { Operator.plus }
+                let op: SSAOperator = if case .addExpression = node { SSAOperator.plus }
                               else if case .subExpression = node { .minus }
                               else if case .divExpression = node { .div }
                               else { .times }
 
                 
-                let ssa = SSA(
+                let ssa = SSAInstruction(
                     name: .temp(nextTempVersion()),
                     left: lhs,
                     right: rhs,
@@ -355,7 +361,7 @@ class Lowering {
         }
     }
 
-    func lowerAssignmentOrExpressionToSSA() -> [SSA] {
+    func lowerAssignmentOrExpressionToSSA() -> [SSAInstruction] {
         while let node = nodes.first {
             switch node {
                 case .assignment:
@@ -383,9 +389,17 @@ class Lowering {
                     }
                     
                 case .addExpression, .subExpression, .divExpression, .timesExpression:
-                    let ssas = lowerExpression(nodes: &nodes)
-                    
-//                    return ssas
+                    switch lowerExpression(nodes: &nodes) {
+                        case .left(let expressions):
+                            return expressions
+                        case .right(let value):
+                            return [
+                                .init(
+                                    name: .temp(nextTempVersion()),
+                                    left: value
+                                )
+                            ]
+                    }
                 default:
                     nodes.removeFirst()
             }
@@ -394,85 +408,3 @@ class Lowering {
     }
 
 }
-
-
-enum State {
-    enum Assignment {
-        case start
-        case variable(Node.Descriptor)
-        case expression(Node.Descriptor)
-    }
-    case readyForStatement
-    case assignment(Assignment)
-
-}
-
-extension State {
-    func consume(_ node: Node) -> Self? {
-        switch self {
-            case .readyForStatement:
-                switch node {
-                    case .assignment:
-                        return .assignment(.start)
-                    default:
-                        print("Not implemented yet: \(node)")
-                        return nil
-                }
-            case .assignment(let state):
-                switch state {
-                    case .start:
-                        break
-                    case .variable:
-                        break
-                    case .expression:
-                        break
-                }
-                return nil
-        }
-    }
-}
-
-//
-//
-//func lower(
-//    stringResolver: StringResolver,
-//    nodes: [Node].SubSequence
-//) -> [VirtualMachine.Instruction] {
-//    var currentState = State.readyForStatement
-//    
-//    for i in nodes.indices {
-//        let node = nodes[i]
-//        switch node {
-//            case .assignment:
-//                guard let nextState = currentState.consume(node) else {
-//                    preconditionFailure()
-//                }
-//                currentState = nextState
-//            case .variableDeclaration:
-//                // Ignore
-//            case .structDeclaration:
-//                // Ignore
-//            case .structMemberDeclaration:
-//                // Ignore
-//            case .addExpression:
-////                <#code#>
-//            case .subExpression:
-////                <#code#>
-//            case .divExpression:
-////                <#code#>
-//            case .timesExpression:
-////                <#code#>
-//            case .scope:
-////                <#code#>
-//            case .scopeEnd:
-////                <#code#>
-//            case .number(_):
-////                <#code#>
-//            case .identifier(_):
-////                <#code#>
-//        }
-//    }
-//    
-//    
-//    return []
-//}
