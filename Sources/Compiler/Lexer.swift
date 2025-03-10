@@ -24,6 +24,8 @@ enum Token: Equatable {
     case equal
     case doubleEqual
     case semicolon
+    
+    case eof
 }
 
 extension Token {
@@ -47,6 +49,9 @@ class Lexer {
     public func getSubstring( // TODO(William): Possibly put in a cache if it takes too long to lookup the result
         representedBy descriptor: Token.Descriptor
     ) -> Substring {
+        guard descriptor < tokens.count-1 else {
+            return "EOF"
+        }
         var copy = originalSource
         for _ in 0..<descriptor {
             _ = Lexer.lexSingleToken(from: &copy)
@@ -101,7 +106,7 @@ class Lexer {
             default:
                 // Identifier
                 if source.starts(with: "truct") {
-                    source.removeFirst("struct".count);
+                    source.removeFirst("truct".count);
                     return .struct
                 }
                 while let next = source.first, next.isLetter || next.isNumber || next == "_" {
@@ -117,5 +122,6 @@ class Lexer {
         while let token = Lexer.lexSingleToken(from: &source) {
             tokens.append(token)
         }
+        tokens.append(.eof)
     }
 }

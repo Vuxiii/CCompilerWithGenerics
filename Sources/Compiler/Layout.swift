@@ -5,6 +5,7 @@
 //  Created by William Juhl on 04/03/2025.
 //
 import Foundation
+import Combine
 
 actor TypesBroker {
     static let shared = TypesBroker(
@@ -27,6 +28,7 @@ actor TypesBroker {
 
 extension TypesBroker {
     public func publish(layout: Layout.UserType) async {
+        print("publishing \(layout.typeName) layout...")
         guard sizes[layout.typeName] == nil else {
             print("Tried to publish \(layout.typeName) multiple times...")
             return
@@ -79,9 +81,23 @@ extension TypesBroker {
     }
 }
 
+extension Layout.ScopeLayout {
+    func offset(for variable: Substring) async -> Int? { // TODO(William): We could figure out a caching scheme for this if performance sucks.
+        var offset = 0 // TODO(William): We could make this a list of promises, and then return the reduction of all the promises and sum them.
+        for field in self.variables {
+            if field.name == variable {
+                return offset
+            }
+            // TODO(William): Figure out a way to await these calls concurrently.
+            offset += await TypesBroker.shared.getSize(for: field.type)
+        }
+        
+        return nil
+    }
+}
 
 class Layout {
-    struct Field {
+    struct Field: Equatable {
         let name: Substring
         let type: Substring
     }
@@ -102,7 +118,7 @@ class Layout {
     var nodes: [Node].SubSequence
     var userTypes: [UserType] = []
     
-    var scopes = [Node.Descriptor: ScopeLayout]()
+    var scopes = [Range<Node.Descriptor>: ScopeLayout]()
     
     let stringResolver: StringResolver
     
@@ -172,11 +188,15 @@ extension Layout {
         userTypes.append(userType)
     }
     
+    
+    
     func computeScopeLayout() {
         nodes.removeFirst()
+        let startRange = nodes.startIndex
+        
         var scopeVariables = [Layout.Field]()
-        while nodes.isEmpty != false && nodes.first != .scopeEnd {
-            if nodes.first == .scope {
+        while let node = nodes.first, node != .scopeEnd {
+            if nodes.first == .scopeOpen {
                 // TODO(William): Recurse here
             }
             if nodes.first != .variableDeclaration {
@@ -198,6 +218,10 @@ extension Layout {
                 type: stringResolver.resolve(typeDescriptor)
             ))
         }
+        nodes.removeFirst()
+        
+        let endRange = nodes.startIndex
+        scopes[startRange..<endRange] = ScopeLayout(variables: scopeVariables)
     }
     
     func computeLayouts(andPublish shouldPublishFoundTypes: Bool = true) {
@@ -205,7 +229,7 @@ extension Layout {
             switch nodes.first {
                 case .structDeclaration:
                     computeStructLayout(andPublish: shouldPublishFoundTypes)
-                case .scope:
+                case .scopeOpen:
                     computeScopeLayout()
                 default:
                     nodes.removeFirst()

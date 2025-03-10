@@ -17,7 +17,7 @@ enum Node: Equatable {
     case divExpression
     case timesExpression
     
-    case scope
+    case scopeOpen
     case scopeEnd
     
     case number(Token.Descriptor)
@@ -57,7 +57,7 @@ extension Node {
                     .divExpression
                 case .timesExpression:
                     .timesExpression
-                case .scope:
+                case .scopeOpen:
                     .scope
                 case .scopeEnd:
                     .scopeEnd
@@ -68,8 +68,10 @@ extension Node {
             }
         }
     }
-    
-    
+}
+
+extension Node.Stripped {
+    public typealias Descriptor = [Node].SubSequence.Index
 }
 
 extension Node {
@@ -133,7 +135,9 @@ class Parser {
 //        parseStructDeclaration()
 //        parseVariableDeclaration()
 //        parseVariableAssignmentDeclaration()
-        parseAssignment()
+        while tokens.first != .eof {
+            parseStatement()
+        }
     }
     
     func parseTopLevel() {
@@ -141,14 +145,24 @@ class Parser {
     }
     
     func parseStatement() {
-        
+        if tokens.starts(with: [.identifier, .identifier, .semicolon]) {
+            parseVariableDeclaration();
+        } else if tokens.starts(with: [.identifier, .identifier, .equal]) {
+            parseVariableDeclarationAndAssignment()
+        } else if tokens.starts(with: [.identifier, .equal]) {
+            parseAssignment();
+        } else if tokens.starts(with: [.lcurl]) {
+            parseScope()
+        } else if tokens.starts(with: [.struct, .identifier, .lcurl]) {
+            parseStructDeclaration()
+        }
     }
     
     func parseScope() {
         precondition(token(at: 0) == .lcurl)
         
         tokens.removeFirst()
-        nodes.append(.scope)
+        nodes.append(.scopeOpen)
         while tokens.first != .rcurl {
             parseStatement()
         }
@@ -206,7 +220,7 @@ class Parser {
         tokens.removeFirst(3)
     }
     
-    func parseVariableAssignmentDeclaration() {
+    func parseVariableDeclarationAndAssignment() {
         precondition(tokens.count >= 3)
         precondition(token(at: 0) == .identifier) // Type
         precondition(token(at: 1) == .identifier) // Name

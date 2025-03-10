@@ -72,7 +72,7 @@ final class TestSSA: XCTestCase {
             return descriptorMap[descriptor]![...]
         }
         
-        let AST: [Node.Stripped] = [
+        let AST: [Node] = [
             .assignment,
             .identifier(descriptorMap["a"]!),
             .addExpression,
@@ -88,7 +88,7 @@ final class TestSSA: XCTestCase {
             stringResolver: stringResolver
         )
         
-        let ssas = lower.convertToSSA()
+        let ssas = lower.lowerAssignmentOrExpressionToSSA()
         
         let strings = ssas.map { $0.stringRepresentation(resolver: stringResolver) }
             .joined(separator: "\n")
@@ -98,7 +98,331 @@ final class TestSSA: XCTestCase {
 [T2] = 3
 [T3] = 4 minus 1
 [T4] = [T2] times [T3]
-a0 = [T1] plus [T4]
+a1 = [T1] plus [T4]
+""")
+    }
+    
+    func testSSALowering_simpleAssignment_singleNumber() throws {
+        let descriptorMap: BiDictionary<Int, String> = [
+            0: "a",
+            2: "2"
+        ]
+        
+        let stringResolver = StringResolver { descriptor in
+            return descriptorMap[descriptor]![...]
+        }
+        
+        let AST: [Node] = [
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .number(descriptorMap["2"]!)
+        ]
+        let lower = Lowering(
+            nodes: AST[...],
+            stringResolver: stringResolver
+        )
+        
+        let ssas = lower.lowerAssignmentOrExpressionToSSA()
+        
+        let strings = ssas.map { $0.stringRepresentation(resolver: stringResolver) }
+            .joined(separator: "\n")
+        
+        XCTAssertEqual(strings,  """
+a1 = 2
+""")
+    }
+    
+    func testSSALowering_simpleAssignment_WithOneBinaryOperator() throws {
+        let descriptorMap: BiDictionary<Int, String> = [
+            0: "a",
+            2: "2",
+            4: "4"
+        ]
+        
+        let stringResolver = StringResolver { descriptor in
+            return descriptorMap[descriptor]![...]
+        }
+        
+        let AST: [Node] = [
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .addExpression,
+            .number(descriptorMap["2"]!),
+            .number(descriptorMap["4"]!)
+        ]
+        let lower = Lowering(
+            nodes: AST[...],
+            stringResolver: stringResolver
+        )
+        
+        let ssas = lower.lowerAssignmentOrExpressionToSSA()
+        
+        let strings = ssas.map { $0.stringRepresentation(resolver: stringResolver) }
+            .joined(separator: "\n")
+        
+        XCTAssertEqual(strings,  """
+a1 = 2 plus 4
+""")
+    }
+    
+    func testSSALowering_simpleAssignment_WithTwoBinaryOperator() throws {
+        let descriptorMap: BiDictionary<Int, String> = [
+            0: "a",
+            2: "2",
+            4: "4",
+            6: "8",
+        ]
+        
+        let stringResolver = StringResolver { descriptor in
+            return descriptorMap[descriptor]![...]
+        }
+        
+        let AST: [Node] = [
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .timesExpression,
+            .addExpression,
+            .number(descriptorMap["2"]!),
+            .number(descriptorMap["4"]!),
+            .number(descriptorMap["8"]!)
+        ]
+        let lower = Lowering(
+            nodes: AST[...],
+            stringResolver: stringResolver
+        )
+        
+        let ssas = lower.lowerAssignmentOrExpressionToSSA()
+        
+        let strings = ssas.map { $0.stringRepresentation(resolver: stringResolver) }
+            .joined(separator: "\n")
+        
+        XCTAssertEqual(strings,  """
+[T1] = 2 plus 4
+a1 = [T1] times 8
+""")
+    }
+    
+    func testSSALowering_simpleAssignment_WithTwoBinaryOperator_UsingItself() throws {
+        let descriptorMap: BiDictionary<Int, String> = [
+            0: "a",
+            2: "2",
+            4: "4",
+            6: "8",
+        ]
+        
+        let stringResolver = StringResolver { descriptor in
+            return descriptorMap[descriptor]![...]
+        }
+        
+        let AST: [Node] = [
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .timesExpression,
+            .addExpression,
+            .identifier(descriptorMap["a"]!),
+            .identifier(descriptorMap["a"]!),
+            .identifier(descriptorMap["a"]!)
+        ]
+        let lower = Lowering(
+            nodes: AST[...],
+            stringResolver: stringResolver
+        )
+        
+        let ssas = lower.lowerAssignmentOrExpressionToSSA()
+        
+        let strings = ssas.map { $0.stringRepresentation(resolver: stringResolver) }
+            .joined(separator: "\n")
+        
+        XCTAssertEqual(strings,  """
+[T1] = a0 plus a0
+a1 = [T1] times a0
+""")
+    }
+    
+    func testSSALowering_simpleAssignment_WithTwoBinaryOperator_AndMultipleVariables() throws {
+        let descriptorMap: BiDictionary<Int, String> = [
+            0: "a",
+            2: "b",
+            4: "c",
+            6: "d",
+        ]
+        
+        let stringResolver = StringResolver { descriptor in
+            return descriptorMap[descriptor]![...]
+        }
+        
+        let AST: [Node] = [
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .timesExpression,
+            .addExpression,
+            .identifier(descriptorMap["b"]!),
+            .identifier(descriptorMap["c"]!),
+            .identifier(descriptorMap["d"]!)
+        ]
+        let lower = Lowering(
+            nodes: AST[...],
+            stringResolver: stringResolver
+        )
+        
+        let ssas = lower.lowerAssignmentOrExpressionToSSA()
+        
+        let strings = ssas.map { $0.stringRepresentation(resolver: stringResolver) }
+            .joined(separator: "\n")
+        
+        XCTAssertEqual(strings,  """
+[T1] = b0 plus c0
+a1 = [T1] times d0
+""")
+    }
+    
+    func testSSALowering_MultipleAssignments() throws {
+        let descriptorMap: BiDictionary<Int, String> = [
+            0: "a",
+            2: "2",
+            4: "3",
+            6: "4",
+        ]
+        
+        let stringResolver = StringResolver { descriptor in
+            return descriptorMap[descriptor]![...]
+        }
+        
+        let AST: [Node] = [
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .number(descriptorMap["2"]!),
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .addExpression,
+            .identifier(descriptorMap["a"]!),
+            .number(descriptorMap["2"]!),
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .timesExpression,
+            .identifier(descriptorMap["a"]!),
+            .number(descriptorMap["4"]!)
+        ]
+        let lower = Lowering(
+            nodes: AST[...],
+            stringResolver: stringResolver
+        )
+        
+        var ssas = lower.lowerAssignmentOrExpressionToSSA()
+        ssas.append(contentsOf: lower.lowerAssignmentOrExpressionToSSA())
+        ssas.append(contentsOf: lower.lowerAssignmentOrExpressionToSSA())
+        
+        let strings = ssas.map { $0.stringRepresentation(resolver: stringResolver) }
+            .joined(separator: "\n")
+        
+        XCTAssertEqual(strings,  """
+a1 = 2
+a2 = a1 plus 2
+a3 = a2 times 4
+""")
+    }
+    
+    func testSSALowering_MultipleAssignments_withMultipleTemp() throws {
+        let descriptorMap: BiDictionary<Int, String> = [
+            0: "a",
+            2: "2",
+            4: "3",
+            6: "4",
+        ]
+        
+        let stringResolver = StringResolver { descriptor in
+            return descriptorMap[descriptor]![...]
+        }
+        
+        let AST: [Node] = [
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .number(descriptorMap["2"]!),
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .addExpression,
+            .identifier(descriptorMap["a"]!),
+            .timesExpression,
+            .number(descriptorMap["2"]!),
+            .number(descriptorMap["3"]!),
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .timesExpression,
+            .identifier(descriptorMap["a"]!),
+            .number(descriptorMap["4"]!)
+        ]
+        let lower = Lowering(
+            nodes: AST[...],
+            stringResolver: stringResolver
+        )
+        
+        var ssas = lower.lowerAssignmentOrExpressionToSSA()
+        ssas.append(contentsOf: lower.lowerAssignmentOrExpressionToSSA())
+        ssas.append(contentsOf: lower.lowerAssignmentOrExpressionToSSA())
+        
+        let strings = ssas.map { $0.stringRepresentation(resolver: stringResolver) }
+            .joined(separator: "\n")
+        
+        XCTAssertEqual(strings,  """
+a1 = 2
+[T1] = a1
+[T2] = 2 times 3
+a2 = [T1] plus [T2]
+a3 = a2 times 4
+""")
+    }
+    
+    func testSSALowering_MultipleAssignments_withMultipleTemp_More() throws {
+        let descriptorMap: BiDictionary<Int, String> = [
+            0: "a",
+            2: "2",
+            4: "3",
+            6: "4",
+        ]
+        
+        let stringResolver = StringResolver { descriptor in
+            return descriptorMap[descriptor]![...]
+        }
+        
+        let AST: [Node] = [
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .number(descriptorMap["2"]!),
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .addExpression,
+            .identifier(descriptorMap["a"]!),
+            .timesExpression,
+            .number(descriptorMap["2"]!),
+            .number(descriptorMap["3"]!),
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .timesExpression,
+            .identifier(descriptorMap["a"]!),
+            .addExpression,
+            .number(descriptorMap["2"]!),
+            .number(descriptorMap["4"]!)
+        ]
+        let lower = Lowering(
+            nodes: AST[...],
+            stringResolver: stringResolver
+        )
+        
+        var ssas = lower.lowerAssignmentOrExpressionToSSA()
+        ssas.append(contentsOf: lower.lowerAssignmentOrExpressionToSSA())
+        ssas.append(contentsOf: lower.lowerAssignmentOrExpressionToSSA())
+        
+        let strings = ssas.map { $0.stringRepresentation(resolver: stringResolver) }
+            .joined(separator: "\n")
+        
+        XCTAssertEqual(strings,  """
+a1 = 2
+[T1] = a1
+[T2] = 2 times 3
+a2 = [T1] plus [T2]
+[T3] = a2
+[T4] = 2 plus 4
+a3 = [T3] times [T4]
 """)
     }
 }

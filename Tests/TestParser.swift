@@ -9,15 +9,6 @@ import XCTest
 @testable import CCompilerWithGenerics
 
 final class TestParser: XCTestCase {
-
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
-
     func testAssignment() {
         let tokens: [Token] = [
             .identifier,
@@ -68,7 +59,7 @@ final class TestParser: XCTestCase {
         ]
         
         let parser = Parser(tokens: tokens[...])
-        parser.parseVariableAssignmentDeclaration()
+        parser.parseVariableDeclarationAndAssignment()
         
         XCTAssertEqual(parser.nodes, [
             .variableDeclaration,
@@ -118,6 +109,38 @@ final class TestParser: XCTestCase {
         XCTAssertEqual(parser.nodes, [
             .structDeclaration,
             .identifier(1)
+        ])
+    }
+    
+    func testParseTwoStructDecl() {
+        let tokens: [Token] = [
+            .struct,
+            .identifier,
+            .lcurl,
+            .identifier,
+            .identifier,
+            .semicolon,
+            .identifier,
+            .identifier,
+            .semicolon,
+            .rcurl,
+            .semicolon,
+            .eof
+        ]
+        
+        let parser = Parser(tokens: tokens[...])
+        
+        parser.parse()
+        
+        XCTAssertEqual(parser.nodes, [
+            .structDeclaration,
+            .identifier(1),
+            .structMemberDeclaration,
+            .identifier(4),
+            .identifier(3),
+            .structMemberDeclaration,
+            .identifier(7),
+            .identifier(6),
         ])
     }
 }

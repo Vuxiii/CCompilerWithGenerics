@@ -32,7 +32,7 @@ struct Point {
 };
 int justADecl;
 int a = 69;
-a = 2 + 3 * (4 - 1); hej med dig 42.69
+a = 2 + 3 * (4 - 1);
 """
 //        let simpleSSATest = """
 //a = 2 + 69 * 42;
@@ -41,7 +41,19 @@ a = 2 + 3 * (4 - 1); hej med dig 42.69
 a = 2 + 3 * (4 - 1);
 """
         
-        let lexer = Lexer(source: simpleSSATest[...])
+        let scopeInput = """
+{
+    int a;
+    int b;
+    int c;
+
+    a = 42;
+    b = 69;
+    c = 5;
+}
+"""
+        
+        let lexer = Lexer(source: contents[...])
         lexer.lex()
         for index in lexer.tokens.indices {
             print("\(lexer.tokens[index]): '\(lexer.getSubstring(representedBy: index))'")
@@ -80,24 +92,42 @@ a = 2 + 3 * (4 - 1);
         
         print("\nLowering...")
         let lower = Lowering(
-            nodes: stripped[...],
+            nodes: parser.nodes[...],
             stringResolver: .init(resolve: lexer.getSubstring(representedBy:))
         )
         
-        let ssas = lower.convertToSSA()
+        let ssas = lower.lowerAssignmentOrExpressionToSSA()
         
-        let machine = VirtualMachine(instructions: [
-            .add(to: .register(.r1), from: .immediate(.integer(2))),
-            .add(to: .register(.r1), from: .immediate(.integer(2))),
-            .add(to: .register(.r1), from: .immediate(.integer(2))),
-            .add(to: .register(.r1), from: .immediate(.integer(2))),
-        ])
+        let instructions = lowerSSA(
+            ssas: ssas[...],
+            scopes: [:]
+        )
+        
+        let machine = VirtualMachine(instructions: instructions)
 //        machine.run()
     }
     
     
 }
 
+func lowerSSA(
+    ssas: [Lowering.SSA].SubSequence,
+    scopes: [Range<Node.Descriptor>: Layout.ScopeLayout]
+) -> [VirtualMachine.Instruction] {
+    
+    for ssa in ssas {
+        switch ssa.name {
+            case let .temp(version):
+                break
+            case let .variable(descriptor, version):
+                break
+        }
+    }
+    
+    return []
+}
+
+// TODO(William): Consider if we want to do this. Or maybe just do a guard let so we don't make a copy of the entire AST.
 func stripDeclarations(
     from nodes: [Node].SubSequence
 ) -> [Node.Stripped] {
@@ -125,7 +155,7 @@ extension Lowering.SSA {
                 stringResolver.resolve(descriptor)
         }
         
-        guard let op = self.op, let right = self.right else {
+        guard let (op, right) = self.rhs else {
             return "\(name) = \(lhs)"
         }
         
@@ -182,7 +212,7 @@ extension Either {
 }
 
 class Lowering {
-    var nodes: [Node.Stripped].SubSequence
+    var nodes: [Node].SubSequence
     var blocks: [SSABlock] = []
     
     var variables = [Substring: Int]()
@@ -191,7 +221,7 @@ class Lowering {
     let stringResolver: StringResolver
     
     public init(
-        nodes: [Node.Stripped].SubSequence,
+        nodes: [Node].SubSequence,
         stringResolver: StringResolver
     ) {
         self.nodes = nodes
@@ -221,31 +251,38 @@ class Lowering {
     struct SSA {
         var name: SSAVar
         let left: SSAValue
-        let right: SSAValue?// TODO(William): We could combine this and op in a optional tuple
-        let op: Operator?
+        let rhs: (op: Operator, right: SSAValue)?
+        
+        public init(
+            name: SSAVar,
+            left: SSAValue
+        ) {
+            self.name = name
+            self.left = left
+            self.rhs = nil
+        }
         
         public init(
             name: SSAVar,
             left: SSAValue,
-            right: SSAValue? = nil,
-            op: Operator? = nil
+            right: SSAValue,
+            op: Operator
         ) {
             self.name = name
             self.left = left
-            self.right = right
-            self.op = op
+            self.rhs = (op, right)
         }
     }
 
-    func nextVersion(for descriptor: Node.Descriptor) -> Int { // TODO(William): default name should be mangled or something. Maybe switch to using enums instead.
+    func nextVersion(for descriptor: Node.Descriptor) -> Int {
         let variable = stringResolver.resolve(descriptor)
-        defer {
+//        defer {
             variables[variable, default: 0] += 1
-        }
+//        }
         return variables[variable, default: 0]
     }
 
-    func nextTemp() -> Int {
+    func nextTempVersion() -> Int {
         latestTempVersion += 1
         return latestTempVersion
     }
@@ -255,69 +292,47 @@ class Lowering {
         return variables[name, default: 0]
     }
     
-    
-    
-    enum Whatever {
-        case single(to: Substring, value: Substring)
-        case assignment(to: Substring, lhs: Substring, rhs: Substring)
+    func extractExpressions(nodes: inout [Node].SubSequence) -> (SSAValue, [Lowering.SSA]) {
+        switch lowerExpression(nodes: &nodes) {
+            case .left(let subExpressions):
+                return (.ssaVar(.temp(latestTempVersion)), subExpressions)
+            case .right(let value):
+                return (value, [])
+        }
     }
     
-    func lowerExpression(nodes: inout [Node.Stripped].SubSequence) -> [SSA] {
+    func lowerExpression(nodes: inout [Node].SubSequence) -> Either<[SSA], SSAValue> {
         guard let node = nodes.first else {
-            return []
+            return .left([])
         }
-//        assignment
-//        identifier(30)->a
-//        addExpression
-//        number(32)->2
-//        timesExpression
-//        number(34)->3
-//        subExpression
-//        number(37)->4
-//        number(39)->1
         
         switch node {
+            case .identifier(let descriptor):
+                nodes.removeFirst()
+                return .right(.ssaVar(.variable(descriptor, latestVersionNumber(for: descriptor))))
+            case .number(let descriptor):
+                nodes.removeFirst()
+                return .right(.number(descriptor))
             case .addExpression, .subExpression, .divExpression, .timesExpression:
                 nodes.removeFirst()
                 var output = [SSA]()
-                                
-                var lhs: SSAValue
-                var leftExpressions = [SSA]()
-                if case let .number(descriptor) = nodes.first {
-                    lhs = .number(descriptor)
-                    nodes.removeFirst()
-                } else if case let .identifier(descriptor) = node {
-                    lhs = .ssaVar(.variable(descriptor, latestVersionNumber(for: descriptor)))
-                    nodes.removeFirst()
-                } else {
-                    leftExpressions = lowerExpression(nodes: &nodes)
+                
+                var (lhs, lhsSubExpressions) = extractExpressions(nodes: &nodes)
+                
+                if [.addExpression, .subExpression,
+                     .divExpression, .timesExpression].contains(nodes.first) && lhsSubExpressions.isEmpty {
+                    let singleSSA = SSA(
+                        name: .temp(nextTempVersion()),
+                        left: lhs
+                    )
                     lhs = .ssaVar(.temp(latestTempVersion))
+                    output.append(singleSSA)
                 }
                 
-                let rhs: SSAValue
-                var rightExpressions = [SSA]()
-                if case let .number(descriptor) = nodes.first {
-                    rhs = .number(descriptor)
-                    nodes.removeFirst()
-                } else if case let .identifier(descriptor) = node {
-                    rhs = .ssaVar(.variable(descriptor, latestVersionNumber(for: descriptor)))
-                    nodes.removeFirst()
-                } else {
-                    if leftExpressions.isEmpty {
-                        // The lhs is a single value and rhs is compound expression. For this reason, we need to compute lhs first and store it in a temp variable. Then we can compute rhs expression. This also means that we need to update lhs to point to our tmp variable.
-                        let singleSSA = SSA(
-                            name: .temp(nextTemp()),
-                            left: lhs
-                        )
-                        lhs = .ssaVar(.temp(latestTempVersion))
-                        output.append(singleSSA)
-                    }
-                    rightExpressions = lowerExpression(nodes: &nodes)
-                    rhs = .ssaVar(.temp(latestTempVersion))
-                }
+                let (rhs, rhsSubExpressions) = extractExpressions(nodes: &nodes)
                 
-                output.append(contentsOf: leftExpressions)
-                output.append(contentsOf: rightExpressions)
+                output.append(contentsOf: lhsSubExpressions)
+                output.append(contentsOf: rhsSubExpressions)
                 
                 let op: Operator = if case .addExpression = node { Operator.plus }
                               else if case .subExpression = node { .minus }
@@ -326,7 +341,7 @@ class Lowering {
 
                 
                 let ssa = SSA(
-                    name: .temp(nextTemp()),
+                    name: .temp(nextTempVersion()),
                     left: lhs,
                     right: rhs,
                     op: op
@@ -334,13 +349,90 @@ class Lowering {
                 
                 output.append(ssa)
                 
-                return output
+                return .left(output)
             default:
                 preconditionFailure("Unrecognized node \(node) during lowering of expression")
         }
     }
+    
+    
+    // TODO(William): Delete below
+//    func lowerExpression(nodes: inout [Node].SubSequence) -> [SSA] {
+//        guard let node = nodes.first else {
+//            return []
+//        }
+//        
+//        switch node {
+//            case .addExpression, .subExpression, .divExpression, .timesExpression:
+//                nodes.removeFirst()
+//                var output = [SSA]()
+//                                
+//                var lhs: SSAValue
+//                var leftExpressions = [SSA]()
+//                if case let .number(descriptor) = nodes.first {
+//                    lhs = .number(descriptor)
+//                    nodes.removeFirst()
+//                } else if case let .identifier(descriptor) = node {
+//                    lhs = .ssaVar(.variable(descriptor, latestVersionNumber(for: descriptor)))
+//                    nodes.removeFirst()
+//                } else {
+//                    leftExpressions = lowerExpression(nodes: &nodes)
+//                    lhs = .ssaVar(.temp(latestTempVersion))
+//                }
+//                
+//                let rhs: SSAValue
+//                var rightExpressions = [SSA]()
+//                if case let .number(descriptor) = nodes.first {
+//                    rhs = .number(descriptor)
+//                    nodes.removeFirst()
+//                } else if case let .identifier(descriptor) = node {
+//                    rhs = .ssaVar(.variable(descriptor, latestVersionNumber(for: descriptor)))
+//                    nodes.removeFirst()
+//                } else {
+//                    if leftExpressions.isEmpty {
+//                        // The lhs is a single value and rhs is compound expression. For this reason, we need to compute lhs first and store it in a temp variable. Then we can compute rhs expression. This also means that we need to update lhs to point to our tmp variable.
+//                        let singleSSA = SSA(
+//                            name: .temp(nextTempVersion()),
+//                            left: lhs
+//                        )
+//                        lhs = .ssaVar(.temp(latestTempVersion))
+//                        output.append(singleSSA)
+//                    }
+//                    rightExpressions = lowerExpression(nodes: &nodes)
+//                    rhs = .ssaVar(.temp(latestTempVersion))
+//                }
+//                
+//                output.append(contentsOf: leftExpressions)
+//                output.append(contentsOf: rightExpressions)
+//                
+//                let op: Operator = if case .addExpression = node { Operator.plus }
+//                              else if case .subExpression = node { .minus }
+//                              else if case .divExpression = node { .div }
+//                              else { .times }
+//
+//                
+//                let ssa = SSA(
+//                    name: .temp(nextTempVersion()),
+//                    left: lhs,
+//                    right: rhs,
+//                    op: op
+//                )
+//                
+//                output.append(ssa)
+//                
+//                return output
+//            default:
+//                switch node {
+//                    case .identifier(let desc), .number(let desc):
+//                        preconditionFailure("Unrecognized node \(node)->[\(stringResolver.resolve( desc))] during lowering of expression")
+//                    default:
+//                        preconditionFailure("Unrecognized node \(node) during lowering of expression")
+//                }
+//                
+//        }
+//    }
 
-    func convertToSSA() -> [SSA] {
+    func lowerAssignmentOrExpressionToSSA() -> [SSA] {
         while let node = nodes.first {
             switch node {
                 case .assignment:
@@ -350,28 +442,34 @@ class Lowering {
                         preconditionFailure("Left hand side of an assignment should be an identifier (For now).")
                     }
                     
-                    var rhs = lowerExpression(nodes: &nodes)
-                    let updated = SSAVar.variable(lhs, nextVersion(for: lhs))
-                    rhs[rhs.count-1].name = updated
+                    switch lowerExpression(nodes: &nodes) {
+                        case .left(var rhs):
+                            let updated = SSAVar.variable(lhs, nextVersion(for: lhs))
+                            rhs[rhs.count-1].name = updated
+                            
+                            // We are consuming a temp here. We want to give the temp version number back to reuse it.
+                            latestTempVersion -= 1
+                            return rhs
+                        case .right(let rhs):
+                            return [
+                                .init(
+                                    name: .variable(lhs, nextVersion(for: lhs)),
+                                    left: rhs
+                                )
+                            ]
+                    }
                     
-                    let strings = rhs.map { $0.stringRepresentation(resolver: stringResolver) }
-                        .joined(separator: "\n")
-                    
-//                    print(strings)
-                    return rhs
+//                    var rhs = lowerExpression(nodes: &nodes)
+//                    let updated = SSAVar.variable(lhs, nextVersion(for: lhs))
+//                    rhs[rhs.count-1].name = updated
+//                    latestTempVersion -= 1
+//                    return rhs
                 case .addExpression, .subExpression, .divExpression, .timesExpression:
                     let ssas = lowerExpression(nodes: &nodes)
                     
-                    let tempVar = "tempVariable"
-                    
-                case .scope:
-                    break
-                case .scopeEnd:
-                    break
-                case .number(let descriptor):
-                    break
-                case .identifier(let descriptor):
-                    break
+//                    return ssas
+                default:
+                    nodes.removeFirst()
             }
         }
         return []

@@ -29,7 +29,82 @@ a = 2 + 3 * (4 - 1);
             .minus,
             .number,
             .rparen,
-            .semicolon
+            .semicolon,
+            .eof
         ])
+    }
+    
+    func testGetSubstring() {
+        
+        let contents = """
+struct Line {
+    Point point1;
+    Point point2;
+};
+struct Point {
+    int x;
+    int y;
+};
+int justADecl;
+int a = 69;
+a = 2 + 3 * (4 - 1); hej med dig 42.69
+"""
+        
+        let lexer = Lexer(source: contents[...])
+        lexer.lex()
+        
+        let actual = (0..<lexer.tokens.count).map { lexer.getSubstring(representedBy: $0) }
+        let expected: [Substring] = [
+            "struct",
+            "Line",
+            "{",
+            "Point",
+            "point1",
+            ";",
+            "Point",
+            "point2",
+            ";",
+            "}",
+            ";",
+            "struct",
+            "Point",
+            "{",
+            "int",
+            "x",
+            ";",
+            "int",
+            "y",
+            ";",
+            "}",
+            ";",
+            "int",
+            "justADecl",
+            ";",
+            "int",
+            "a",
+            "=",
+            "69",
+            ";",
+            "a",
+            "=",
+            "2",
+            "+",
+            "3",
+            "*",
+            "(",
+            "4",
+            "-",
+            "1",
+            ")",
+            ";",
+            "hej",
+            "med",
+            "dig",
+            "42.69",
+            "EOF"
+        ]
+        
+        XCTAssertEqual(expected, actual)
+        
     }
 }
