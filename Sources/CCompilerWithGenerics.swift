@@ -354,83 +354,6 @@ class Lowering {
                 preconditionFailure("Unrecognized node \(node) during lowering of expression")
         }
     }
-    
-    
-    // TODO(William): Delete below
-//    func lowerExpression(nodes: inout [Node].SubSequence) -> [SSA] {
-//        guard let node = nodes.first else {
-//            return []
-//        }
-//        
-//        switch node {
-//            case .addExpression, .subExpression, .divExpression, .timesExpression:
-//                nodes.removeFirst()
-//                var output = [SSA]()
-//                                
-//                var lhs: SSAValue
-//                var leftExpressions = [SSA]()
-//                if case let .number(descriptor) = nodes.first {
-//                    lhs = .number(descriptor)
-//                    nodes.removeFirst()
-//                } else if case let .identifier(descriptor) = node {
-//                    lhs = .ssaVar(.variable(descriptor, latestVersionNumber(for: descriptor)))
-//                    nodes.removeFirst()
-//                } else {
-//                    leftExpressions = lowerExpression(nodes: &nodes)
-//                    lhs = .ssaVar(.temp(latestTempVersion))
-//                }
-//                
-//                let rhs: SSAValue
-//                var rightExpressions = [SSA]()
-//                if case let .number(descriptor) = nodes.first {
-//                    rhs = .number(descriptor)
-//                    nodes.removeFirst()
-//                } else if case let .identifier(descriptor) = node {
-//                    rhs = .ssaVar(.variable(descriptor, latestVersionNumber(for: descriptor)))
-//                    nodes.removeFirst()
-//                } else {
-//                    if leftExpressions.isEmpty {
-//                        // The lhs is a single value and rhs is compound expression. For this reason, we need to compute lhs first and store it in a temp variable. Then we can compute rhs expression. This also means that we need to update lhs to point to our tmp variable.
-//                        let singleSSA = SSA(
-//                            name: .temp(nextTempVersion()),
-//                            left: lhs
-//                        )
-//                        lhs = .ssaVar(.temp(latestTempVersion))
-//                        output.append(singleSSA)
-//                    }
-//                    rightExpressions = lowerExpression(nodes: &nodes)
-//                    rhs = .ssaVar(.temp(latestTempVersion))
-//                }
-//                
-//                output.append(contentsOf: leftExpressions)
-//                output.append(contentsOf: rightExpressions)
-//                
-//                let op: Operator = if case .addExpression = node { Operator.plus }
-//                              else if case .subExpression = node { .minus }
-//                              else if case .divExpression = node { .div }
-//                              else { .times }
-//
-//                
-//                let ssa = SSA(
-//                    name: .temp(nextTempVersion()),
-//                    left: lhs,
-//                    right: rhs,
-//                    op: op
-//                )
-//                
-//                output.append(ssa)
-//                
-//                return output
-//            default:
-//                switch node {
-//                    case .identifier(let desc), .number(let desc):
-//                        preconditionFailure("Unrecognized node \(node)->[\(stringResolver.resolve( desc))] during lowering of expression")
-//                    default:
-//                        preconditionFailure("Unrecognized node \(node) during lowering of expression")
-//                }
-//                
-//        }
-//    }
 
     func lowerAssignmentOrExpressionToSSA() -> [SSA] {
         while let node = nodes.first {
@@ -459,11 +382,6 @@ class Lowering {
                             ]
                     }
                     
-//                    var rhs = lowerExpression(nodes: &nodes)
-//                    let updated = SSAVar.variable(lhs, nextVersion(for: lhs))
-//                    rhs[rhs.count-1].name = updated
-//                    latestTempVersion -= 1
-//                    return rhs
                 case .addExpression, .subExpression, .divExpression, .timesExpression:
                     let ssas = lowerExpression(nodes: &nodes)
                     
