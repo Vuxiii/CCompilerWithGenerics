@@ -222,7 +222,7 @@ class Lowering {
     var nodes: [Node].SubSequence
     var blocks: [SSABlock] = []
     
-    var variables = [Substring: Int]()
+    var variables = [Substring: (latestVersion: Int, versionHasBeenUsed: Bool)]()
     var latestTempVersion: VersionNumber = 0
     
     let stringResolver: StringResolver
@@ -284,8 +284,11 @@ class Lowering {
 
     func nextVersion(for descriptor: Node.Descriptor) -> Int {
         let variable = stringResolver.resolve(descriptor)
-        variables[variable, default: 0] += 1
-        return variables[variable, default: 0]
+        if variables[variable, default: (0, true)].versionHasBeenUsed {
+            variables[variable, default: (0, false)].latestVersion += 1
+            variables[variable, default: (0, false)].versionHasBeenUsed = false
+        }
+        return variables[variable, default: (0, true)].latestVersion
     }
 
     func nextTempVersion() -> Int {
@@ -294,8 +297,10 @@ class Lowering {
     }
     
     func latestVersionNumber(for variable: Node.Descriptor) -> VersionNumber {
+        // We used the variable. We want to allow the `nextVersion(for:)` to increase the counter
         let name = stringResolver.resolve(variable)
-        return variables[name, default: 0]
+        variables[name, default: (0, false)].versionHasBeenUsed = true
+        return variables[name, default: (0, false)].latestVersion
     }
     
     func extractExpressions(nodes: inout [Node].SubSequence) -> (SSAValue, [Lowering.SSAInstruction]) {

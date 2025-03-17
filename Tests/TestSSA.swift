@@ -425,4 +425,54 @@ a2 = [T1] plus [T2]
 a3 = [T3] times [T4]
 """)
     }
+    
+    func testSSALowering_ReuseVariable() throws {
+        let descriptorMap: BiDictionary<Int, String> = [
+            0: "a",
+            2: "b",
+            4: "c",
+            6: "10",
+            8: "11",
+            10: "12",
+            12: "13",
+        ]
+        
+        let stringResolver = StringResolver { descriptor in
+            return descriptorMap[descriptor]![...]
+        }
+        
+        let AST: [Node] = [
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .number(descriptorMap["10"]!),
+            .assignment,
+            .identifier(descriptorMap["b"]!),
+            .number(descriptorMap["11"]!),
+            .assignment,
+            .identifier(descriptorMap["a"]!),
+            .number(descriptorMap["12"]!),
+            .assignment,
+            .identifier(descriptorMap["c"]!),
+            .number(descriptorMap["13"]!),
+        ]
+        let lower = Lowering(
+            nodes: AST[...],
+            stringResolver: stringResolver
+        )
+        
+        var ssas = lower.lowerAssignmentOrExpressionToSSA()
+        ssas.append(contentsOf: lower.lowerAssignmentOrExpressionToSSA())
+        ssas.append(contentsOf: lower.lowerAssignmentOrExpressionToSSA())
+        ssas.append(contentsOf: lower.lowerAssignmentOrExpressionToSSA())
+        
+        let strings = ssas.map { $0.stringRepresentation(resolver: stringResolver) }
+            .joined(separator: "\n")
+        
+        XCTAssertEqual(strings,  """
+a1 = 10
+b1 = 11
+a1 = 12
+c1 = 13
+""")
+    }
 }
