@@ -33,6 +33,26 @@ class Liveness {
     
     let stringResolver: StringResolver
     
+    func printLivenessRanges() {
+        let ranges = livenessRanges.sorted(by: { $0.value.lowerBound < $1.value.lowerBound })
+        
+        var output = ""
+        
+        for (variable, range) in ranges {
+            output += "\(variable): "
+            let spacing = String.init(repeating: "  ", count: range.lowerBound)
+            let dashes = String.init(repeating: "--", count: range.lowerBound.distance(to: range.upperBound-1))
+            output += "\(spacing)+-\(dashes)+\n"
+        }
+        let max = ranges.max(by: { $0.value.upperBound < $1.value.upperBound })!
+        let spacing = String.init(repeating: " ", count: "\(max.key): ".count)
+        output += spacing
+        for index in 0...max.value.upperBound {
+            output += "\(index) "
+        }
+        print(output)
+    }
+    
     public init(
         instructions: [Lowering.SSAInstruction].SubSequence,
         stringResolver: StringResolver
@@ -55,7 +75,7 @@ class Liveness {
             currentRange = Range(
                 uncheckedBounds: (
                     currentRange.lowerBound,
-                    ssaInstructions.startIndex.advanced(by: 1)
+                    ssaInstructions.startIndex//.advanced(by: 1)
                 )
             )
         }
