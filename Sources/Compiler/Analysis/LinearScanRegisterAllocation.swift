@@ -32,11 +32,11 @@ class RegisterAllocation {
         
         let liveness: [Assignment]
         
-        var active = [(
+        var active: [(
             reg: Register,
             range: Range<Liveness.SSADescriptor>,
             variable: Liveness.Var
-        )]()
+        )]
         
         var freeRegisters: [Register]
         let registerCount: Int
@@ -55,98 +55,93 @@ class RegisterAllocation {
                 left.value.lowerBound < right.value.lowerBound
             }).map { Assignment.init(range: $0.value, variable: $0.key) }
             
-            self.registerAssignments = .init()
+            self.registerAssignments = .init(minimumCapacity: availableRegisters.count)
             self.freeRegisters = availableRegisters
             self.registerCount = availableRegisters.count
-        }
-        
-        enum AllocationSpot: Equatable {
-            case register(Register)
-            case spilled(Int)
-        }
-        
-        public func getAssignment(for variable: Liveness.Var) -> AllocationSpot? {
-            if let reg = registerAssignments[variable] {
-                .register(reg)
-            } else if let stackSpot = stack[variable] {
-                .spilled(stackSpot)
-            } else {
-                nil
-            }
-        }
-        
-        public func compute() {
-            var step = 0
-            for assignment in liveness {
-                expireOldIntervals(upToBeginningOf: assignment.range)
-                if active.count == registerCount {
-                    spillAt(interval: assignment)
-                } else {
-                    let freeRegister = freeRegisters.removeLast()
-                    registerAssignments[assignment.variable] = freeRegister
-                    add(
-                        register: freeRegister,
-                        toActiveRange: assignment.range,
-                        using: assignment.variable
-                    )
-                }
-                step += 1
-            }
-        }
-        
-        func spillAt(interval assignment: Assignment) {
-            guard let spill = active.last else {
-                return
-            }
-            
-            if spill.range.upperBound > assignment.range.upperBound {
-                guard let freedRegister = registerAssignments.removeValue(forKey: spill.variable) else {
-                    fatalError("The assignment was not assigned a register")
-                }
-                
-                registerAssignments[assignment.variable] = freedRegister
-                
-                stack[spill.variable] = currentStackSlot
-                
-                active.removeLast()
-                add(register: freedRegister, toActiveRange: assignment.range, using: assignment.variable)
-            } else {
-                stack[assignment.variable] = currentStackSlot
-            }
-            currentStackSlot += 1
-        }
-        
-        func expireOldIntervals(upToBeginningOf range: Range<Liveness.SSADescriptor>) {
-            while active.count > 0 {
-                guard let upperBound = active.first?.range.upperBound else {
-                    return
-                }
-                if upperBound >= range.lowerBound {
-                    return
-                }
-                let releasedRegister = active.removeFirst().reg
-                freeRegisters.append(releasedRegister)
-            }
-        }
-        
-        func add(
-            register: Register, toActiveRange
-            range: Range<Liveness.SSADescriptor>,
-            using variable: Liveness.Var
-        ) {
-            var index = active.startIndex
-            while index < active.endIndex && active[index].range.upperBound < range.upperBound {
-                index = active.index(after: index)
-            }
-            active.insert((reg: register, range: range, variable: variable ), at: index)
+            self.active = []
         }
     }
 }
-//} else if !didInsert {
-//    index = active.index(after: index)
-//    active.swapAt(index, active.index(after: index))
-//    didInsert = true
-//} else if index < active.endIndex {
-//    index = active.index(after: index)
-//    active.swapAt(index, active.index(after: index))
-//}
+
+extension RegisterAllocation.LinearScan {
+    enum AllocationSpot: Equatable {
+        case register(Register)
+        case spilled(Int)
+    }
+    public func getAssignment(for variable: Liveness.Var) -> AllocationSpot? {
+        if let reg = registerAssignments[variable] {
+            .register(reg)
+        } else if let stackSpot = stack[variable] {
+            .spilled(stackSpot)
+        } else {
+            nil
+        }
+    }
+}
+
+extension RegisterAllocation.LinearScan {
+    public func compute() {
+        /// https://web.cs.ucla.edu/~palsberg/course/cs132/linearscan.pdf
+        for assignment in liveness {
+            expireOldIntervals(upToBeginningOf: assignment.range)
+            if active.count == registerCount {
+                spillAt(interval: assignment)
+            } else {
+                let freeRegister = freeRegisters.removeLast()
+                registerAssignments[assignment.variable] = freeRegister
+                add(
+                    register: freeRegister,
+                    toActiveRange: assignment.range,
+                    using: assignment.variable
+                )
+            }
+        }
+    }
+    
+    private func spillAt(interval assignment: Assignment) {
+        guard let spill = active.last else {
+            return
+        }
+        
+        if spill.range.upperBound > assignment.range.upperBound {
+            guard let freedRegister = registerAssignments.removeValue(forKey: spill.variable) else {
+                fatalError("The assignment was not assigned a register")
+            }
+            
+            registerAssignments[assignment.variable] = freedRegister
+            
+            stack[spill.variable] = currentStackSlot
+            
+            active.removeLast()
+            add(register: freedRegister, toActiveRange: assignment.range, using: assignment.variable)
+        } else {
+            stack[assignment.variable] = currentStackSlot
+        }
+        currentStackSlot += 1
+    }
+    
+    private func expireOldIntervals(upToBeginningOf range: Range<Liveness.SSADescriptor>) {
+        while active.count > 0 {
+            guard let upperBound = active.first?.range.upperBound else {
+                return
+            }
+            if upperBound >= range.lowerBound {
+                return
+            }
+            let releasedRegister = active.removeFirst().reg
+            freeRegisters.append(releasedRegister)
+        }
+    }
+    
+    private func add(
+        register: Register, toActiveRange
+        range: Range<Liveness.SSADescriptor>,
+        using variable: Liveness.Var
+    ) {
+        var index = active.startIndex
+        while index < active.endIndex && active[index].range.upperBound < range.upperBound {
+            index = active.index(after: index)
+        }
+        active.insert((reg: register, range: range, variable: variable), at: index)
+    }
+}

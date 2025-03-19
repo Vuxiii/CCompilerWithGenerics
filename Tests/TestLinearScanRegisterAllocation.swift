@@ -9,7 +9,6 @@ import XCTest
 @testable import CCompilerWithGenerics
 
 final class TestLinearScanRegisterAllocation: XCTestCase {
-    
     func testThreeAssignments() {
         let input = """
 a = 42;

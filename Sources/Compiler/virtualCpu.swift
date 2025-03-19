@@ -24,7 +24,9 @@ class VirtualMachine {
     
     public init(instructions: [Instruction]) {
         self.instructions = instructions
-        registers.merge(Register.allCases.map { ($0, 0) }, uniquingKeysWith: { a, b in a })
+        for reg in Register.allCases {
+            registers[reg] = 0
+        }
     }
     
     
