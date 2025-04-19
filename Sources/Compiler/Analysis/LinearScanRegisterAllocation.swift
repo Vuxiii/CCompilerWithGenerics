@@ -24,7 +24,7 @@ extension Liveness.Var {
 
 class RegisterAllocation {
     class LinearScan {
-        typealias Register = VirtualMachine.Register.GeneralRegister
+        typealias Register = VirtualMachine.Register
         struct Assignment: Hashable {
             let range: Range<Liveness.SSADescriptor>
             let variable: Liveness.Var

@@ -124,49 +124,147 @@ a = 2 + 3 * (4 - 1);
             }
         }
         
-        return
-        
+        let allocator = RegisterAllocation.LinearScan(
+            liveness: livenessAnalysis.livenessRanges,
+            availableRegisters: VirtualMachine.Register.allGeneralCases
+        )
+        allocator.compute()
         
         let instructions = lowerSSA(
             ssas: ssas[...],
-            scopes: [:]
+            allocation: allocator,
+            stringResolver: .init(resolve: lexer.getSubstring(representedBy:))
         )
         
         let machine = VirtualMachine(instructions: instructions)
-//        machine.run()
+        machine.run()
     }
 }
 
 func lowerSSA(
     ssas: [Lowering.SSAInstruction].SubSequence,
-    scopes: [Range<Node.Descriptor>: Layout.ScopeLayout]
+    allocation: RegisterAllocation.LinearScan,
+    stringResolver: StringResolver
 ) -> [VirtualMachine.Instruction] {
+    var out = [VirtualMachine.Instruction]()
     for ssa in ssas {
-        switch ssa.name {
+        guard let destination = switch ssa.name {
             case .temp(let versionNumber):
-                break
+                allocation.getAssignment(for: .temp(versionNumber))
             case let .variable(descriptor, versionNumber):
-                break
+                allocation.getAssignment(for: .variable(stringResolver.resolve(descriptor), versionNumber))
+        } else {
+            fatalError("A destination was not allocated for this instruction")
         }
         
-        switch ssa.left {
-            case .ssaVar(let sSAVar):
-                break
+        let lhs: VirtualMachine.Instruction.Source = switch ssa.left { // TODO(William): Make a resolve for this that unwraps it and does the correct thing.
+            case .ssaVar(let ssaVar):
+                switch ssaVar {
+                    case .temp(let versionNumber):
+                        if let assignment = allocation.getAssignment(for: .temp(versionNumber)) {
+                            switch assignment {
+                                case let .register(reg):
+                                    .register(reg)
+                                case let .spilled(address):
+                                    .address(address)
+                            }
+                        } else {
+                            fatalError("Assignment was not allocated")
+                        }
+                    case let .variable(descriptor, versionNumber):
+                        if let assignment = allocation.getAssignment(for: .variable(stringResolver.resolve(descriptor), versionNumber)) {
+                            switch assignment {
+                                case .register(let register):
+                                    .register(register)
+                                case .spilled(let address):
+                                    .address(address)
+                            }
+                        } else {
+                            fatalError("Assignment was not allocated")
+                        }
+                        
+                }
             case .number(let descriptor):
-                break
+                if let num = Int(stringResolver.resolve(descriptor)) {
+                    .immediate(.integer(num))
+                } else {
+                    fatalError("Incorrect number format")
+                }
+                
         }
         
         if let (op, right) = ssa.rhs {
-            switch right {
-                case .ssaVar(let sSAVar):
-                    break
+            let rhs: VirtualMachine.Instruction.Source = switch right { // TODO(William): Make a resolve for this that unwraps it and does the correct thing.
+                case .ssaVar(let ssaVar):
+                    switch ssaVar {
+                        case .temp(let versionNumber):
+                            if let assignment = allocation.getAssignment(for: .temp(versionNumber)) {
+                                switch assignment {
+                                    case let .register(reg):
+                                        .register(reg)
+                                    case let .spilled(address):
+                                        .address(address)
+                                }
+                            } else {
+                                fatalError("Assignment was not allocated")
+                            }
+                        case let .variable(descriptor, versionNumber):
+                            if let assignment = allocation.getAssignment(for: .variable(stringResolver.resolve(descriptor), versionNumber)) {
+                                switch assignment {
+                                    case .register(let register):
+                                        .register(register)
+                                    case .spilled(let address):
+                                        .address(address)
+                                }
+                            } else {
+                                fatalError("Assignment was not allocated")
+                            }
+                            
+                    }
                 case .number(let descriptor):
-                    break
+                    if let num = Int(stringResolver.resolve(descriptor)) {
+                        .immediate(.integer(num))
+                    } else {
+                        fatalError("Incorrect number format")
+                    }
             }
+            let target: VirtualMachine.Instruction.Target = switch destination {
+                case .register(let reg):
+                    .register(reg)
+                case .spilled(let address):
+                    .address(address)
+            }
+            
+            
+            if !target.addressIsSame(as: lhs) {
+                // Move from 3AC to 2AC
+                out.append(.move(to: target, from: lhs))
+            }
+            
+            switch op {
+                case .plus:
+                    out.append(.add(to: target, from: rhs))
+                case .minus:
+                    out.append(.minus(to: target, from: rhs))
+                case .times:
+                    out.append(.times(to: target, from: rhs))
+                case .div:
+                    out.append(.div(to: target, from: rhs))
+            }
+            
+        } else {
+            // It is a simple move instruction
+            let target: VirtualMachine.Instruction.Target = switch destination {
+                case .register(let reg):
+                    .register(reg)
+                case .spilled(let address):
+                    .address(address)
+            }
+            out.append(.move(to: target, from: lhs))
         }
     }
     
-    return []
+    return out
 }
 
 // TODO(William): Consider if we want to do this. Or maybe just do a guard let so we don't make a copy of the entire AST.

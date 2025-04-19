@@ -27,6 +27,7 @@ class VirtualMachine {
         for reg in Register.allCases {
             registers[reg] = 0
         }
+        stack.insert(contentsOf: Array(repeating: 0, count: 1024), at: 0)
     }
     
     
@@ -41,6 +42,8 @@ class VirtualMachine {
                 }
             case .register(let reg):
                 registers[reg, default: 0]
+            case .address(let address):
+                stack[address]
         }
     }
     
@@ -67,6 +70,30 @@ class VirtualMachine {
                             stack[address] += value
                     }
                     
+                case .minus(let to, let from):
+                    let value = getValue(from: from)
+                    switch to {
+                        case .register(let reg):
+                            registers[reg, default: 0] -= value
+                        case .address(let address):
+                            stack[address] -= value
+                    }
+                case .times(let to, let from):
+                    let value = getValue(from: from)
+                    switch to {
+                        case .register(let reg):
+                            registers[reg, default: 0] *= value
+                        case .address(let address):
+                            stack[address] *= value
+                    }
+                case .div(let to, let from):
+                    let value = getValue(from: from)
+                    switch to {
+                        case .register(let reg):
+                            registers[reg, default: 0] /= value
+                        case .address(let address):
+                            stack[address] /= value
+                    }
             }
             
             registers[.instructionPointer] += 1
@@ -89,6 +116,15 @@ extension VirtualMachine {
             .flag(.equal),
             .flag(.greaterThan),
             .flag(.lessThan),
+        ]
+        
+        static let allGeneralCases: [VirtualMachine.Register] = [
+            .general(.r0),
+            .general(.r1),
+            .general(.r2),
+            .general(.r3),
+            .general(.r4),
+            .general(.r5),
         ]
         
         enum GeneralRegister: Int, CaseIterable {
@@ -118,6 +154,9 @@ extension VirtualMachine {
     enum Instruction {
         case move(to: Target, from: Source)
         case add(to: Target, from: Source)
+        case minus(to: Target, from: Source)
+        case times(to: Target, from: Source)
+        case div(to: Target, from: Source)
     }
 }
 
@@ -135,7 +174,20 @@ extension VirtualMachine.Instruction {
     enum Source {
         case immediate(Immediate)
         case register(VirtualMachine.Register)
-        //        case address(Int)
+        case address(Int)
+    }
+}
+
+extension VirtualMachine.Instruction.Target {
+    func addressIsSame(as source: VirtualMachine.Instruction.Source) -> Bool {
+        switch (self, source) {
+            case let (.register(lhs), .register(rhs)):
+                return lhs == rhs
+            case let (.address(lhs), .address(rhs)):
+                return lhs == rhs
+            default:
+                return false
+        }
     }
 }
 
